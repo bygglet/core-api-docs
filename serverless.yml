@@ -1,0 +1,127 @@
+service: core-api-docs
+frameworkVersion: '3'
+
+plugins:
+  - serverless-single-page-app-plugin
+
+provider:
+  name: aws
+  region: us-east-1
+  stage: dev
+
+custom:
+  stage: ${opt:stage, "${self:provider.stage, 'dev'}"}
+  name: ${self:service}-${self:custom.stage}
+  cert:
+    prod: arn:aws:acm:us-east-1:500753743866:certificate/462ff059-b6cf-413b-a08f-1fcc0407d90b # DEV
+    dev: arn:aws:acm:us-east-1:500753743866:certificate/462ff059-b6cf-413b-a08f-1fcc0407d90b
+  dns:
+    hosted-zone-id:
+      prod: Z1T3ZVJPAC93RH
+      dev: Z020920035TEY49FGF384
+    suffix:
+      prod: bygglet.com
+      dev: stage.bygglet.com
+
+resources:
+  Resources:
+    OasBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.name}
+
+    OasBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref OasBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Action:
+                - s3:GetObject
+              Effect: Allow
+              Resource: !Sub
+                - '${OasBucketArn}/*'
+                - OasBucketArn: !GetAtt OasBucket.Arn
+              Principal:
+                CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+    OasDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Aliases:
+            - developer.${self:custom.dns.suffix.${self:custom.stage}}
+          Comment: 'CloudFront distribution for ${self:custom.name}'
+          DefaultCacheBehavior:
+            Compress: true
+            DefaultTTL: 86400
+            ForwardedValues:
+              QueryString: true
+            MaxTTL: 31536000
+            TargetOriginId: ${self:custom.name}
+            ViewerProtocolPolicy: 'redirect-to-https'
+          Enabled: true
+          HttpVersion: 'http2'
+          DefaultRootObject: 'index.html'
+          Origins:
+            - DomainName: !GetAtt OasBucket.DomainName
+              Id: ${self:custom.name}
+              S3OriginConfig:
+                OriginAccessIdentity:
+                  !Join [ '', [ 'origin-access-identity/cloudfront/', !Ref CloudFrontOriginAccessIdentity ] ]
+          PriceClass: 'PriceClass_100'
+          ViewerCertificate:
+           AcmCertificateArn: ${self:custom.cert.${self:custom.stage}}
+           MinimumProtocolVersion: TLSv1.2_2021
+           SslSupportMethod: sni-only
+          WebACLId: !GetAtt OasWebACL.Arn
+
+    CloudFrontOriginAccessIdentity:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: 'CloudFront OAI for ${self:custom.name}'
+
+    OasWebACL:
+      Type: AWS::WAFv2::WebACL
+      Properties:
+        Name: "${self:custom.name}-WebACL"
+        DefaultAction:
+          Block: { }
+        Scope: CLOUDFRONT
+        VisibilityConfig:
+          SampledRequestsEnabled: true
+          CloudWatchMetricsEnabled: true
+          MetricName: "${self:custom.name}-WebACL-Metric"
+        Rules:
+          - Name: "${self:custom.name}-WebACL-OfficeIPRule"
+            Priority: 0
+            Statement:
+              IPSetReferenceStatement:
+                Arn: !GetAtt OasIPSet.Arn
+            Action:
+              Allow: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: "${self:custom.name}-WebACL-OfficeIPRule-Metric"
+
+    OasIPSet:
+      Type: AWS::WAFv2::IPSet
+      Properties:
+        Name: OasIPSet
+        IPAddressVersion: IPV4
+        Scope: CLOUDFRONT
+        Addresses:
+          - 85.24.136.130/32
+
+    OasRecordSet:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        HostedZoneId: ${self:custom.dns.hosted-zone-id.${self:custom.stage}}
+        Name: developer.${self:custom.dns.suffix.${self:custom.stage}}
+        TTL: 60
+        Type: CNAME
+        ResourceRecords:
+          - !GetAtt OasDistribution.DomainName
