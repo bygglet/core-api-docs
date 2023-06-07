@@ -6,7 +6,8 @@ window.onload = function() {
     url: "https://petstore.swagger.io/v2/swagger.json",
     urls: [
         {url: "./customer.oas.json", name: "Customer"},
-        {url: "./company.oas.json", name: "Company"}
+        {url: "./company.oas.json", name: "Company"},
+        {url: "./economy.oas.json", name: "Economy"},
     ],
     dom_id: '#swagger-ui',
     deepLinking: true,
