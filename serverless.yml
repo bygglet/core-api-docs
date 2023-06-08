@@ -1,9 +1,6 @@
 service: core-api-docs
 frameworkVersion: '3'
 
-plugins:
-  - serverless-single-page-app-plugin
-
 provider:
   name: aws
   region: us-east-1
@@ -55,10 +52,10 @@ resources:
           Comment: 'CloudFront distribution for ${self:custom.name}'
           DefaultCacheBehavior:
             Compress: true
-            DefaultTTL: 86400
+            DefaultTTL: 20
             ForwardedValues:
               QueryString: true
-            MaxTTL: 31536000
+            MaxTTL: 30
             TargetOriginId: ${self:custom.name}
             ViewerProtocolPolicy: 'redirect-to-https'
           Enabled: true
